@@ -1,0 +1,56 @@
+stages:
+  - prebuild
+  - build
+
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "push"
+
+variables:
+  CARGO_HOME: "$CI_PROJECT_DIR/.cargo"
+  CARGO_INCREMENTAL: 0
+  DOCKER_IMAGE_NAME: $CI_REGISTRY_IMAGE/$CI_COMMIT_REF_SLUG
+  DOCKER_IMAGE_TAG: $CI_COMMIT_SHA
+  GIT_SUBMODULE_FORCE_HTTPS: "true"
+  GIT_SUBMODULE_STRATEGY: recursive
+
+reuse-lint:
+  stage: prebuild
+  image: python:latest
+  script:
+    - pip install reuse
+    - reuse lint
+
+build-rust:
+  image: debian:testing-slim
+  stage: build
+  script:
+    - apt-get update && apt-get install -y capnproto rustup build-essential
+    - rustup default stable
+    - cd examples
+    - cargo build --release
+    - cargo test --verbose
+    - cargo clippy
+    - cargo fmt
+    - cd ../msg
+    - cargo build --release
+    - cargo test --verbose
+    - cargo clippy
+    - cargo fmt
+    - cd ../client
+    - cargo build --release
+    - cargo test --verbose
+    - cargo clippy
+    - cargo fmt
+    - cargo build --release
+    - cd ../internal/async
+    - cargo build --release
+    - cargo test --verbose
+    - cargo clippy
+    - cargo fmt
+    - cd ../internal_schemas
+    - cargo build --release
+    - cargo test --verbose
+    - cargo clippy
+    - cargo fmt
+  allow_failure: false

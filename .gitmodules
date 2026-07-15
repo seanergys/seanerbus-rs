@@ -1,0 +1,3 @@
+[submodule "msg/schemas"]
+	path = msg/schemas
+	url = git@gitlab.seanergys.fz-juelich.de:software/seanerbus-msg

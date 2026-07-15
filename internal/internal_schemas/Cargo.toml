@@ -1,0 +1,19 @@
+# SPDX-FileCopyrightText: 2026 SEANERGYS Partners <https://seanergys.eu>
+#
+# SPDX-License-Identifier: MIT
+
+[package]
+name = "seanerbus_schemas"
+version = "0.1.0"
+edition = "2024"
+
+build = "src/build.rs"
+
+[dependencies]
+capnp = "0.25.2"
+rand = "0.10.1"
+thiserror = "2.0.18"
+uuid = { version = "1.22.0", features = ["v4"] }
+
+[build-dependencies]
+capnpc = "0.25.0"

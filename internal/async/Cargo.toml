@@ -1,0 +1,18 @@
+# SPDX-FileCopyrightText: 2026 SEANERGYS Partners <https://seanergys.eu>
+#
+# SPDX-License-Identifier: MIT
+
+[package]
+name = "seanerbus_async"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+bytes = "1.11.1"
+env_logger = "0.11.10"
+log = "0.4.29"
+
+seanerbus_schemas = {path="../internal_schemas"}
+thiserror = "2.0.18"
+tokio = { version = "1.50.0", features = ["full"] }
+tracing = "0.1.44"

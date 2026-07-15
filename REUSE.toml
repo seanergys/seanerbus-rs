@@ -1,0 +1,21 @@
+version = 1
+
+[[annotations]]
+
+path = [
+   "README.md",
+   ".gitmodules",
+   ".gitignore",
+   ".gitlab-ci.yml",
+"client/Cargo.toml",
+"client/Cargo.lock",
+"client/README.md",
+"examples/Cargo.lock",
+"internal/internal_schemas/.gitignore",
+"internal/internal_schemas/Cargo.lock",
+"internal/internal_schemas/schemas/internal.capnp",
+"msg/Cargo.lock",
+"msg/Cargo.toml"
+   ]
+SPDX-FileCopyrightText = "2026 SEANERGYS Partners <https://seanergys.eu>"
+SPDX-License-Identifier = "MIT"

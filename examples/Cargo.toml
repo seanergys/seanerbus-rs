@@ -1,0 +1,39 @@
+# SPDX-FileCopyrightText: 2026 SEANERGYS Partners <https://seanergys.eu>
+#
+# SPDX-License-Identifier: MIT
+
+[package]
+name = "rust_examples"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+
+
+seanerbus_msg = { path = "../msg"}
+seanerbus_schemas = { path = "../internal/internal_schemas"}
+tokio = { version = "1.50.0", features = ["full"] }
+uuid = { version = "1.23.0", features = ["serde", "v4"] }
+thiserror = "2.0.18"
+seanerbus_client = { path = "../client/"}
+rand = "0.10.1"
+
+[[bin]]
+name = "subscribe_test"
+path = "subscribe_test/src/main.rs"
+
+
+[[bin]]
+name = "publish_test"
+path = "publish_test/src/main.rs"
+
+
+[[bin]]
+name = "request_test"
+path = "request_test/src/main.rs"
+
+[[bin]]
+name = "response_test"
+path = "response_test/src/main.rs"
+
+
