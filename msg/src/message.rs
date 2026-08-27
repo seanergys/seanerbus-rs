@@ -8,6 +8,9 @@ use uuid::Uuid;
 use crate::msg_capnp::MessageTypes;
 use crate::msg_capnp::flux_lifecycle_event_v1;
 use crate::msg_capnp::hello_world_req_v1;
+use crate::msg_capnp::history;
+use crate::msg_capnp::history_req_v1;
+use crate::msg_capnp::history_res_v1;
 use crate::msg_capnp::register_resolve_req_v1;
 use crate::msg_capnp::register_resolve_res_v1;
 use crate::msg_capnp::resolve_req_v1;
@@ -19,6 +22,28 @@ use crate::msg_capnp::unregister_resolve_req_v1;
 use crate::msg_capnp::unregister_resolve_res_v1;
 use crate::msg_capnp::vector_req_v1;
 use crate::msg_capnp::vector_res_v1;
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Aggregate {
+    pub minimum: f64,
+    pub maximum: f64,
+    pub sum: f64,
+    pub count: u64,
+    pub integral: f64,
+    pub active_time: u64,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum HistoryValues {
+    Raw(Vec<f64>),
+    Aggregate(Vec<Aggregate>),
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct History {
+    pub time_delta: Vec<i64>,
+    pub values: HistoryValues,
+}
 
 /// FOOBAR
 #[derive(Debug)]
@@ -37,6 +62,8 @@ pub enum Message {
     RegisterResolveResV1(bool, String),
     UnregisterResolveReqV1(Uuid),
     UnregisterResolveResV1(bool, String),
+    HistoryReqV1(Uuid, i64, i64, i64, crate::msg_capnp::HistoryType),
+    HistoryResV1(Result<History, String>),
     UserDefined(u64, Vec<u8>)
 }
 
@@ -225,10 +252,66 @@ impl Message {
             }
 
             MessageTypes::HistoryReqV1 => {
-                todo!("Implement me!");
+                let reader =
+                    capnp::serialize::read_message(data, capnp::message::ReaderOptions::new())?;
+                let reader = reader.get_root::<history_req_v1::Reader>()?;
+                let address = reader.get_address()?;
+
+                Ok(Message::HistoryReqV1(
+                    Uuid::from_u64_pair(address.get_upper(), address.get_lower()),
+                    reader.get_start_time(),
+                    reader.get_end_time(),
+                    reader.get_interval_max(),
+                    reader.get_history_type().map_err(|err| {
+                        capnp::Error::failed(format!("invalid history type: {}", err.0))
+                    })?,
+                ))
             }
             MessageTypes::HistoryResV1 => {
-                todo!("Implement me!");
+                let reader =
+                    capnp::serialize::read_message(data, capnp::message::ReaderOptions::new())?;
+                let reader = reader.get_root::<history_res_v1::Reader>()?;
+
+                let result = match reader.get_ok_or_err().which().map_err(|err| {
+                    capnp::Error::failed(format!("invalid history response union: {}", err.0))
+                })? {
+                    history_res_v1::ok_or_err::Which::Err(err) => {
+                        Err(err?
+                            .to_str()
+                            .map_err(|err| capnp::Error::failed(err.to_string()))?
+                            .to_owned())
+                    }
+                    history_res_v1::ok_or_err::Which::Ok(history) => {
+                        let history = history?;
+                        let time_delta = history.get_time_delta()?.iter().collect();
+                        let values = match history.get_raw_or_agg().which().map_err(|err| {
+                            capnp::Error::failed(format!("invalid history values union: {}", err.0))
+                        })? {
+                            history::raw_or_agg::Which::Value(values) => {
+                                HistoryValues::Raw(values?.iter().collect())
+                            }
+                            history::raw_or_agg::Which::Aggregate(aggregates) => {
+                                HistoryValues::Aggregate(
+                                    aggregates?
+                                        .iter()
+                                        .map(|aggregate| Aggregate {
+                                            minimum: aggregate.get_minimum(),
+                                            maximum: aggregate.get_maximum(),
+                                            sum: aggregate.get_sum(),
+                                            count: aggregate.get_count(),
+                                            integral: aggregate.get_integral(),
+                                            active_time: aggregate.get_active_time(),
+                                        })
+                                        .collect(),
+                                )
+                            }
+                        };
+
+                        Ok(History { time_delta, values })
+                    }
+                };
+
+                Ok(Message::HistoryResV1(result))
             }
             MessageTypes::FluxClassifyJobReqV1 => {
                 todo!("Implement me!");
@@ -465,9 +548,146 @@ impl Message {
                 Ok((MessageTypes::UnregisterResolveReqV1 as u64, buffer))
             }
 
+            Message::HistoryReqV1(address, start, end, interval_max, history_type) => {
+                let mut bld =
+                    capnp::message::TypedBuilder::<history_req_v1::Owned>::new_default();
+                let mut msg = bld.init_root();
+                let mut address_builder = msg.reborrow().init_address();
+                let (upper, lower) = address.as_u64_pair();
+                address_builder.set_upper(upper);
+                address_builder.set_lower(lower);
+                msg.set_start_time(*start);
+                msg.set_end_time(*end);
+                msg.set_interval_max(*interval_max);
+                msg.set_history_type(*history_type);
+
+                let mut buffer = vec![];
+                capnp::serialize::write_message(&mut buffer, bld.borrow_inner())?;
+                Ok((MessageTypes::HistoryReqV1 as u64, buffer))
+            }
+
+            Message::HistoryResV1(result) => {
+                let mut bld =
+                    capnp::message::TypedBuilder::<history_res_v1::Owned>::new_default();
+                let msg = bld.init_root();
+
+                match result {
+                    Err(err) => msg.get_ok_or_err().set_err(err),
+                    Ok(history) => {
+                        let mut history_builder = msg.get_ok_or_err().init_ok();
+                        let mut time_delta_builder =
+                            history_builder.reborrow().init_time_delta(history.time_delta.len() as u32);
+                        for (index, value) in history.time_delta.iter().enumerate() {
+                            time_delta_builder.set(index as u32, *value);
+                        }
+
+                        match &history.values {
+                            HistoryValues::Raw(values) => {
+                                let mut values_builder = history_builder
+                                    .get_raw_or_agg()
+                                    .init_value(values.len() as u32);
+                                for (index, value) in values.iter().enumerate() {
+                                    values_builder.set(index as u32, *value);
+                                }
+                            }
+                            HistoryValues::Aggregate(aggregates) => {
+                                let mut aggregates_builder = history_builder
+                                    .get_raw_or_agg()
+                                    .init_aggregate(aggregates.len() as u32);
+                                for (index, aggregate) in aggregates.iter().enumerate() {
+                                    let mut aggregate_builder =
+                                        aggregates_builder.reborrow().get(index as u32);
+                                    aggregate_builder.set_minimum(aggregate.minimum);
+                                    aggregate_builder.set_maximum(aggregate.maximum);
+                                    aggregate_builder.set_sum(aggregate.sum);
+                                    aggregate_builder.set_count(aggregate.count);
+                                    aggregate_builder.set_integral(aggregate.integral);
+                                    aggregate_builder.set_active_time(aggregate.active_time);
+                                }
+                            }
+                        }
+                    }
+                }
+
+                let mut buffer = vec![];
+                capnp::serialize::write_message(&mut buffer, bld.borrow_inner())?;
+                Ok((MessageTypes::HistoryResV1 as u64, buffer))
+            }
+
             Message::UserDefined(payload_type, payload) => {
                 Ok((*payload_type, payload.to_vec()))
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn round_trip(message: Message) -> Message {
+        let (payload_type, data) = message.to_capnp().unwrap();
+        Message::from_capnp(payload_type, &data).unwrap()
+    }
+
+    #[test]
+    fn history_request_round_trips() {
+        let address = Uuid::from_u64_pair(0x1234, 0x5678);
+        match round_trip(Message::HistoryReqV1(
+            address,
+            -100,
+            200,
+            30,
+            crate::msg_capnp::HistoryType::FlexTimeline,
+        )) {
+            Message::HistoryReqV1(actual_address, start, end, interval_max, history_type) => {
+                assert_eq!(actual_address, address);
+                assert_eq!((start, end, interval_max), (-100, 200, 30));
+                assert_eq!(history_type, crate::msg_capnp::HistoryType::FlexTimeline);
+            }
+            message => panic!("unexpected message: {message:?}"),
+        }
+    }
+
+    #[test]
+    fn raw_history_response_round_trips() {
+        let history = History {
+            time_delta: vec![0, 10, 20],
+            values: HistoryValues::Raw(vec![1.5, 2.5, 3.5]),
+        };
+
+        match round_trip(Message::HistoryResV1(Ok(history.clone()))) {
+            Message::HistoryResV1(Ok(actual)) => assert_eq!(actual, history),
+            message => panic!("unexpected message: {message:?}"),
+        }
+    }
+
+    #[test]
+    fn aggregate_history_response_round_trips() {
+        let history = History {
+            time_delta: vec![5],
+            values: HistoryValues::Aggregate(vec![Aggregate {
+                minimum: 1.0,
+                maximum: 4.0,
+                sum: 10.0,
+                count: 4,
+                integral: 7.5,
+                active_time: 42,
+            }]),
+        };
+
+        match round_trip(Message::HistoryResV1(Ok(history.clone()))) {
+            Message::HistoryResV1(Ok(actual)) => assert_eq!(actual, history),
+            message => panic!("unexpected message: {message:?}"),
+        }
+    }
+
+    #[test]
+    fn error_history_response_round_trips() {
+        let error = "history unavailable".to_owned();
+        match round_trip(Message::HistoryResV1(Err(error.clone()))) {
+            Message::HistoryResV1(Err(actual)) => assert_eq!(actual, error),
+            message => panic!("unexpected message: {message:?}"),
         }
     }
 }
