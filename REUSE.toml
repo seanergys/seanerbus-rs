@@ -15,7 +15,9 @@ path = [
 "internal/internal_schemas/Cargo.lock",
 "internal/internal_schemas/schemas/internal.capnp",
 "msg/Cargo.lock",
-"msg/Cargo.toml"
+"msg/Cargo.toml",
+"helpers/Cargo.lock",
+"helpers/Cargo.toml"
    ]
 SPDX-FileCopyrightText = "2026 SEANERGYS Partners <https://seanergys.eu>"
 SPDX-License-Identifier = "MIT"
