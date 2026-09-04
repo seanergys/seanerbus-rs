@@ -3,10 +3,10 @@
 // SPDX-License-Identifier: MIT
 
 
+use seanerbus_client::Connection;
 use uuid::Uuid;
 
-pub async fn resolve(name: Vec<(String, String)> ) -> Result<Vec<Uuid>, Box< dyn std::error::Error>>{
-    let mut conn = seanerbus_client::Connection::new("localhost:5398").await?;
+pub async fn resolve(conn: &mut Connection, name: Vec<(String, String)> ) -> Result<Vec<Uuid>, Box< dyn std::error::Error>>{
 
     let (payload_type, payload) = seanerbus_msg::message::Message::ResolveReqV1(name)
         .to_capnp()

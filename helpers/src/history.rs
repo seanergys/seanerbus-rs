@@ -5,10 +5,10 @@
 
 use uuid::Uuid;
 
-pub async fn get_timeline(mut conn: seanerbus_client::Connection, metric_uuid: Uuid, start_time: i64, end_time: i64, interval_max: i64, history_type: seanerbus_msg::msg_capnp::HistoryType) -> Result<seanerbus_msg::message::History, Box< dyn std::error::Error>> {
+pub async fn get_timeline(conn: &mut seanerbus_client::Connection, metric_uuid: Uuid, start_time: i64, end_time: i64, interval_max: i64, history_type: seanerbus_msg::msg_capnp::HistoryType) -> Result<seanerbus_msg::message::History, Box< dyn std::error::Error>> {
     let name: Vec<(String, String)> = Vec::from([("service".to_owned(), "time_series_db".to_owned())]);
 
-    let db_addrs = crate::resolve::resolve(name).await?;
+    let db_addrs = crate::resolve::resolve(conn, name).await?;
 
     if db_addrs.len() == 0 {
         return Err("DB Address not found!".into())
