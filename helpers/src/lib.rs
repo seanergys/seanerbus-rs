@@ -4,3 +4,4 @@
 
 /// FOobar
 pub mod history;
+pub mod resolve;
