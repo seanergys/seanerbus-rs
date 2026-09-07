@@ -8,6 +8,8 @@ use uuid::Uuid;
 use crate::msg_capnp::MessageTypes;
 use crate::msg_capnp::error_res_v1;
 use crate::msg_capnp::flux_lifecycle_event_v1;
+use crate::msg_capnp::get_req_v1;
+use crate::msg_capnp::get_res_v1;
 use crate::msg_capnp::hello_world_req_v1;
 use crate::msg_capnp::history;
 use crate::msg_capnp::history_req_v1;
@@ -17,6 +19,7 @@ use crate::msg_capnp::resolve_req_v1;
 use crate::msg_capnp::resolve_res_v1;
 use crate::msg_capnp::reverse_resolve_req_v1;
 use crate::msg_capnp::reverse_resolve_res_v1;
+use crate::msg_capnp::set_req_v1;
 use crate::msg_capnp::time_value_v1;
 use crate::msg_capnp::unregister_resolve_req_v1;
 use crate::msg_capnp::vector_req_v1;
@@ -62,6 +65,9 @@ pub enum Message {
     HistoryReqV1(Uuid, i64, i64, i64, crate::msg_capnp::HistoryType),
     HistoryResV1(History),
     ErrorResV1(u64, String),
+    GetReqV1(),
+    GetResV1(u64),
+    SetReqV1(u64),
     UserDefined(u64, Vec<u8>),
 }
 
@@ -300,6 +306,22 @@ impl Message {
                 MessageTypes::UnregisterResolveResV1 => Err(MessageError::ParseError(
                     "UnregisterResolveResV1 is deprecated!".to_string(),
                 )),
+                MessageTypes::GetReqV1 => Ok(Message::GetReqV1()),
+
+                MessageTypes::GetResV1 => {
+                    let reader =
+                        capnp::serialize::read_message(data, capnp::message::ReaderOptions::new())?;
+                    let reader = reader.get_root::<get_res_v1::Reader>()?;
+
+                    Ok(Message::GetResV1(reader.reborrow().get_value()))
+                }
+                MessageTypes::SetReqV1 => {
+                    let reader =
+                        capnp::serialize::read_message(data, capnp::message::ReaderOptions::new())?;
+                    let reader = reader.get_root::<set_req_v1::Reader>()?;
+
+                    Ok(Message::GetResV1(reader.reborrow().get_value()))
+                }
             }
         }
     }
@@ -569,6 +591,29 @@ impl Message {
                 let mut buffer = vec![];
                 capnp::serialize::write_message(&mut buffer, bld.borrow_inner())?;
                 Ok((MessageTypes::ErrorResV1 as u64, buffer))
+            }
+            Message::GetReqV1() => {
+                let mut bld = capnp::message::TypedBuilder::<get_req_v1::Owned>::new_default();
+                bld.init_root();
+                let mut buffer = vec![];
+                capnp::serialize::write_message(&mut buffer, bld.borrow_inner())?;
+                Ok((MessageTypes::GetReqV1 as u64, buffer))
+            }
+            Message::GetResV1(value) => {
+                let mut bld = capnp::message::TypedBuilder::<get_res_v1::Owned>::new_default();
+                let mut msg = bld.init_root();
+                msg.reborrow().set_value(*value);
+                let mut buffer = vec![];
+                capnp::serialize::write_message(&mut buffer, bld.borrow_inner())?;
+                Ok((MessageTypes::GetReqV1 as u64, buffer))
+            }
+            Message::SetReqV1(value) => {
+                let mut bld = capnp::message::TypedBuilder::<set_req_v1::Owned>::new_default();
+                let mut msg = bld.init_root();
+                msg.reborrow().set_value(*value);
+                let mut buffer = vec![];
+                capnp::serialize::write_message(&mut buffer, bld.borrow_inner())?;
+                Ok((MessageTypes::GetReqV1 as u64, buffer))
             }
         }
     }
