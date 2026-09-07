@@ -6,20 +6,19 @@ use thiserror::Error;
 use uuid::Uuid;
 
 use crate::msg_capnp::MessageTypes;
+use crate::msg_capnp::error_res_v1;
 use crate::msg_capnp::flux_lifecycle_event_v1;
 use crate::msg_capnp::hello_world_req_v1;
 use crate::msg_capnp::history;
 use crate::msg_capnp::history_req_v1;
 use crate::msg_capnp::history_res_v1;
 use crate::msg_capnp::register_resolve_req_v1;
-use crate::msg_capnp::register_resolve_res_v1;
 use crate::msg_capnp::resolve_req_v1;
 use crate::msg_capnp::resolve_res_v1;
 use crate::msg_capnp::reverse_resolve_req_v1;
 use crate::msg_capnp::reverse_resolve_res_v1;
 use crate::msg_capnp::time_value_v1;
 use crate::msg_capnp::unregister_resolve_req_v1;
-use crate::msg_capnp::unregister_resolve_res_v1;
 use crate::msg_capnp::vector_req_v1;
 use crate::msg_capnp::vector_res_v1;
 
@@ -59,12 +58,11 @@ pub enum Message {
     ReverseResolveResV1(Vec<(String, String)>),
     FluxLifecycleEventV1(String),
     RegisterResolveReqV1(Vec<(String, String)>, Uuid),
-    RegisterResolveResV1(bool, String),
     UnregisterResolveReqV1(Uuid),
-    UnregisterResolveResV1(bool, String),
     HistoryReqV1(Uuid, i64, i64, i64, crate::msg_capnp::HistoryType),
-    HistoryResV1(Result<History, String>),
-    UserDefined(u64, Vec<u8>)
+    HistoryResV1(History),
+    ErrorResV1(u64, String),
+    UserDefined(u64, Vec<u8>),
 }
 
 #[derive(Error, Debug)]
@@ -73,6 +71,8 @@ pub enum MessageError {
     CapnpError(#[from] capnp::Error),
     #[error("Got message of unknown payload type: {0}")]
     PayloadError(u64),
+    #[error("Can not deserialize message: {0}")]
+    ParseError(String),
 }
 
 impl Message {
@@ -82,248 +82,225 @@ impl Message {
     ///
     /// Returns Some(Message) if the data is parsable as a Message and None if not.
     pub fn from_capnp(payload_type: u64, data: &[u8]) -> Result<Message, MessageError> {
-
-        if payload_type > 1 << 63
-        {
+        if payload_type > 1 << 63 {
             Ok(Message::UserDefined(payload_type, data.to_vec()))
-        }
-        else
-        {
-        match MessageTypes::try_from(payload_type as u16).unwrap() {
-            MessageTypes::TimeValueV1 => {
-                let reader =
-                    capnp::serialize::read_message(data, capnp::message::ReaderOptions::new())?;
+        } else {
+            match MessageTypes::try_from(payload_type as u16).unwrap() {
+                MessageTypes::TimeValueV1 => {
+                    let reader =
+                        capnp::serialize::read_message(data, capnp::message::ReaderOptions::new())?;
 
-                let reader = reader.get_root::<time_value_v1::Reader>()?;
+                    let reader = reader.get_root::<time_value_v1::Reader>()?;
 
-                Ok(Message::TimeValueV1(reader.get_time(), reader.get_value()))
-            }
-            MessageTypes::ResolveReqV1 => {
-                let reader =
-                    capnp::serialize::read_message(data, capnp::message::ReaderOptions::new())?;
-                let reader = reader.get_root::<resolve_req_v1::Reader>()?;
-
-                let mut attrs: Vec<(String, String)> = vec![];
-                for kv in reader.get_attributes()? {
-                    attrs.push((
-                        kv.get_key()?.to_string().unwrap(),
-                        kv.get_value()?.to_string().unwrap(),
-                    ));
+                    Ok(Message::TimeValueV1(reader.get_time(), reader.get_value()))
                 }
+                MessageTypes::ResolveReqV1 => {
+                    let reader =
+                        capnp::serialize::read_message(data, capnp::message::ReaderOptions::new())?;
+                    let reader = reader.get_root::<resolve_req_v1::Reader>()?;
 
-                Ok(Message::ResolveReqV1(attrs))
-            }
-            MessageTypes::ResolveResV1 => {
-                let reader =
-                    capnp::serialize::read_message(data, capnp::message::ReaderOptions::new())?;
-                let reader = reader.get_root::<resolve_res_v1::Reader>()?;
-
-                let mut attrs: Vec<Uuid> = vec![];
-                for addr in reader.get_matching_interfaces()? {
-                    attrs.push(Uuid::from_u64_pair(addr.get_upper(), addr.get_lower()));
-                }
-
-                Ok(Message::ResolveResV1(attrs))
-            }
-
-            MessageTypes::HelloWorldReqV1 => {
-                let reader =
-                    capnp::serialize::read_message(data, capnp::message::ReaderOptions::new())?;
-                let reader = reader.get_root::<hello_world_req_v1::Reader>()?;
-
-                Ok(Message::HelloWorldReqV1(
-                    reader.get_msg().unwrap().to_str().unwrap().to_owned(),
-                ))
-            }
-            MessageTypes::HelloWorldResV1 => {
-                let reader =
-                    capnp::serialize::read_message(data, capnp::message::ReaderOptions::new())?;
-                let reader = reader.get_root::<hello_world_req_v1::Reader>()?;
-
-                Ok(Message::HelloWorldResV1(
-                    reader.get_msg().unwrap().to_str().unwrap().to_owned(),
-                ))
-            }
-
-            MessageTypes::VectorReqV1 => {
-                let reader =
-                    capnp::serialize::read_message(data, capnp::message::ReaderOptions::new())?;
-                let reader = reader.get_root::<vector_req_v1::Reader>()?;
-
-                Ok(Message::VectorReqV1(
-                    reader.get_values().unwrap().iter().collect(),
-                ))
-            }
-
-            MessageTypes::VectorResV1 => {
-                let reader =
-                    capnp::serialize::read_message(data, capnp::message::ReaderOptions::new())?;
-                let reader = reader.get_root::<vector_res_v1::Reader>()?;
-
-                Ok(Message::VectorResV1(
-                    reader.get_results().unwrap().iter().collect(),
-                ))
-            }
-            MessageTypes::ReverseResolveReqV1 => {
-                let reader =
-                    capnp::serialize::read_message(data, capnp::message::ReaderOptions::new())?;
-                let reader = reader.get_root::<reverse_resolve_req_v1::Reader>()?;
-
-                Ok(Message::ReverseResolveReqV1(Uuid::from_u64_pair(
-                    reader.get_address().unwrap().get_upper(),
-                    reader.get_address().unwrap().get_lower(),
-                )))
-            }
-            MessageTypes::ReverseResolveResV1 => {
-                let reader =
-                    capnp::serialize::read_message(data, capnp::message::ReaderOptions::new())?;
-                let reader = reader.get_root::<reverse_resolve_res_v1::Reader>()?;
-
-                let mut attrs: Vec<(String, String)> = vec![];
-                for kv in reader.get_name()? {
-                    attrs.push((
-                        kv.get_key()?.to_string().unwrap(),
-                        kv.get_value()?.to_string().unwrap(),
-                    ));
-                }
-
-                Ok(Message::ResolveReqV1(attrs))
-            }
-            MessageTypes::FluxLifecycleEventV1 => {
-                let reader =
-                    capnp::serialize::read_message(data, capnp::message::ReaderOptions::new())?;
-                let reader = reader.get_root::<flux_lifecycle_event_v1::Reader>()?;
-
-                Ok(Message::FluxLifecycleEventV1(
-                    reader.get_data().unwrap().to_str().unwrap().to_owned(),
-                ))
-            }
-            MessageTypes::RegisterResolveReqV1 => {
-                let reader =
-                    capnp::serialize::read_message(data, capnp::message::ReaderOptions::new())?;
-                let reader = reader.get_root::<register_resolve_req_v1::Reader>()?;
-                let address = Uuid::from_u64_pair(
-                    reader.get_address().unwrap().get_upper(),
-                    reader.get_address().unwrap().get_lower(),
-                );
-
-                let mut name: Vec<(String, String)> = vec![];
-                for kv in reader.get_name()? {
-                    name.push((
-                        kv.get_key()?.to_string().unwrap(),
-                        kv.get_value()?.to_string().unwrap(),
-                    ));
-                }
-
-                Ok(Message::RegisterResolveReqV1(name, address))
-            }
-            MessageTypes::RegisterResolveResV1 => {
-                let reader =
-                    capnp::serialize::read_message(data, capnp::message::ReaderOptions::new())?;
-
-                let reader = reader.get_root::<register_resolve_res_v1::Reader>()?;
-
-                Ok(Message::RegisterResolveResV1(
-                    reader.get_success(),
-                    reader.get_err_msg().unwrap().to_string().unwrap(),
-                ))
-            }
-            MessageTypes::UnregisterResolveResV1 => {
-                let reader =
-                    capnp::serialize::read_message(data, capnp::message::ReaderOptions::new())?;
-
-                let reader = reader.get_root::<unregister_resolve_res_v1::Reader>()?;
-
-                Ok(Message::UnregisterResolveResV1(
-                    reader.get_success(),
-                    reader.get_err_msg().unwrap().to_string().unwrap(),
-                ))
-            }
-            MessageTypes::UnregisterResolveReqV1 => {
-                let reader =
-                    capnp::serialize::read_message(data, capnp::message::ReaderOptions::new())?;
-
-                let reader = reader.get_root::<unregister_resolve_req_v1::Reader>()?;
-
-                Ok(Message::UnregisterResolveReqV1(Uuid::from_u64_pair(
-                    reader.get_address().unwrap().get_upper(),
-                    reader.get_address().unwrap().get_lower(),
-                )))
-            }
-
-            MessageTypes::HistoryReqV1 => {
-                let reader =
-                    capnp::serialize::read_message(data, capnp::message::ReaderOptions::new())?;
-                let reader = reader.get_root::<history_req_v1::Reader>()?;
-                let address = reader.get_address()?;
-
-                Ok(Message::HistoryReqV1(
-                    Uuid::from_u64_pair(address.get_upper(), address.get_lower()),
-                    reader.get_start_time(),
-                    reader.get_end_time(),
-                    reader.get_interval_max(),
-                    reader.get_history_type().map_err(|err| {
-                        capnp::Error::failed(format!("invalid history type: {}", err.0))
-                    })?,
-                ))
-            }
-            MessageTypes::HistoryResV1 => {
-                let reader =
-                    capnp::serialize::read_message(data, capnp::message::ReaderOptions::new())?;
-                let reader = reader.get_root::<history_res_v1::Reader>()?;
-
-                let result = match reader.get_ok_or_err().which().map_err(|err| {
-                    capnp::Error::failed(format!("invalid history response union: {}", err.0))
-                })? {
-                    history_res_v1::ok_or_err::Which::Err(err) => {
-                        Err(err?
-                            .to_str()
-                            .map_err(|err| capnp::Error::failed(err.to_string()))?
-                            .to_owned())
+                    let mut attrs: Vec<(String, String)> = vec![];
+                    for kv in reader.get_attributes()? {
+                        attrs.push((
+                            kv.get_key()?.to_string().unwrap(),
+                            kv.get_value()?.to_string().unwrap(),
+                        ));
                     }
-                    history_res_v1::ok_or_err::Which::Ok(history) => {
-                        let history = history?;
-                        let time_delta = history.get_time_delta()?.iter().collect();
-                        let values = match history.get_raw_or_agg().which().map_err(|err| {
-                            capnp::Error::failed(format!("invalid history values union: {}", err.0))
-                        })? {
-                            history::raw_or_agg::Which::Value(values) => {
-                                HistoryValues::Raw(values?.iter().collect())
-                            }
-                            history::raw_or_agg::Which::Aggregate(aggregates) => {
-                                HistoryValues::Aggregate(
-                                    aggregates?
-                                        .iter()
-                                        .map(|aggregate| Aggregate {
-                                            minimum: aggregate.get_minimum(),
-                                            maximum: aggregate.get_maximum(),
-                                            sum: aggregate.get_sum(),
-                                            count: aggregate.get_count(),
-                                            integral: aggregate.get_integral(),
-                                            active_time: aggregate.get_active_time(),
-                                        })
-                                        .collect(),
-                                )
-                            }
-                        };
 
-                        Ok(History { time_delta, values })
+                    Ok(Message::ResolveReqV1(attrs))
+                }
+                MessageTypes::ResolveResV1 => {
+                    let reader =
+                        capnp::serialize::read_message(data, capnp::message::ReaderOptions::new())?;
+                    let reader = reader.get_root::<resolve_res_v1::Reader>()?;
+
+                    let mut attrs: Vec<Uuid> = vec![];
+                    for addr in reader.get_matching_interfaces()? {
+                        attrs.push(Uuid::from_u64_pair(addr.get_upper(), addr.get_lower()));
                     }
-                };
 
-                Ok(Message::HistoryResV1(result))
-            }
-            MessageTypes::FluxClassifyJobReqV1 => {
-                todo!("Implement me!");
-            }
-            MessageTypes::FluxClassifyJobResV1 => {
-                todo!("Implement me!");
-            }
+                    Ok(Message::ResolveResV1(attrs))
+                }
 
-            MessageTypes::FluxLifecycleHeartbeatV1=> {
-                todo!("Implement me!");
+                MessageTypes::HelloWorldReqV1 => {
+                    let reader =
+                        capnp::serialize::read_message(data, capnp::message::ReaderOptions::new())?;
+                    let reader = reader.get_root::<hello_world_req_v1::Reader>()?;
+
+                    Ok(Message::HelloWorldReqV1(
+                        reader.get_msg().unwrap().to_str().unwrap().to_owned(),
+                    ))
+                }
+                MessageTypes::HelloWorldResV1 => {
+                    let reader =
+                        capnp::serialize::read_message(data, capnp::message::ReaderOptions::new())?;
+                    let reader = reader.get_root::<hello_world_req_v1::Reader>()?;
+
+                    Ok(Message::HelloWorldResV1(
+                        reader.get_msg().unwrap().to_str().unwrap().to_owned(),
+                    ))
+                }
+
+                MessageTypes::VectorReqV1 => {
+                    let reader =
+                        capnp::serialize::read_message(data, capnp::message::ReaderOptions::new())?;
+                    let reader = reader.get_root::<vector_req_v1::Reader>()?;
+
+                    Ok(Message::VectorReqV1(
+                        reader.get_values().unwrap().iter().collect(),
+                    ))
+                }
+
+                MessageTypes::VectorResV1 => {
+                    let reader =
+                        capnp::serialize::read_message(data, capnp::message::ReaderOptions::new())?;
+                    let reader = reader.get_root::<vector_res_v1::Reader>()?;
+
+                    Ok(Message::VectorResV1(
+                        reader.get_results().unwrap().iter().collect(),
+                    ))
+                }
+                MessageTypes::ReverseResolveReqV1 => {
+                    let reader =
+                        capnp::serialize::read_message(data, capnp::message::ReaderOptions::new())?;
+                    let reader = reader.get_root::<reverse_resolve_req_v1::Reader>()?;
+
+                    Ok(Message::ReverseResolveReqV1(Uuid::from_u64_pair(
+                        reader.get_address().unwrap().get_upper(),
+                        reader.get_address().unwrap().get_lower(),
+                    )))
+                }
+                MessageTypes::ReverseResolveResV1 => {
+                    let reader =
+                        capnp::serialize::read_message(data, capnp::message::ReaderOptions::new())?;
+                    let reader = reader.get_root::<reverse_resolve_res_v1::Reader>()?;
+
+                    let mut attrs: Vec<(String, String)> = vec![];
+                    for kv in reader.get_name()? {
+                        attrs.push((
+                            kv.get_key()?.to_string().unwrap(),
+                            kv.get_value()?.to_string().unwrap(),
+                        ));
+                    }
+
+                    Ok(Message::ResolveReqV1(attrs))
+                }
+                MessageTypes::FluxLifecycleEventV1 => {
+                    let reader =
+                        capnp::serialize::read_message(data, capnp::message::ReaderOptions::new())?;
+                    let reader = reader.get_root::<flux_lifecycle_event_v1::Reader>()?;
+
+                    Ok(Message::FluxLifecycleEventV1(
+                        reader.get_data().unwrap().to_str().unwrap().to_owned(),
+                    ))
+                }
+                MessageTypes::RegisterResolveReqV1 => {
+                    let reader =
+                        capnp::serialize::read_message(data, capnp::message::ReaderOptions::new())?;
+                    let reader = reader.get_root::<register_resolve_req_v1::Reader>()?;
+                    let address = Uuid::from_u64_pair(
+                        reader.get_address().unwrap().get_upper(),
+                        reader.get_address().unwrap().get_lower(),
+                    );
+
+                    let mut name: Vec<(String, String)> = vec![];
+                    for kv in reader.get_name()? {
+                        name.push((
+                            kv.get_key()?.to_string().unwrap(),
+                            kv.get_value()?.to_string().unwrap(),
+                        ));
+                    }
+
+                    Ok(Message::RegisterResolveReqV1(name, address))
+                }
+                MessageTypes::ErrorResV1 => {
+                    let reader =
+                        capnp::serialize::read_message(data, capnp::message::ReaderOptions::new())?;
+
+                    let reader = reader.get_root::<error_res_v1::Reader>()?;
+
+                    Ok(Message::ErrorResV1(
+                        reader.get_error_code(),
+                        reader.get_what().unwrap().to_string().unwrap(),
+                    ))
+                }
+                MessageTypes::UnregisterResolveReqV1 => {
+                    let reader =
+                        capnp::serialize::read_message(data, capnp::message::ReaderOptions::new())?;
+
+                    let reader = reader.get_root::<unregister_resolve_req_v1::Reader>()?;
+
+                    Ok(Message::UnregisterResolveReqV1(Uuid::from_u64_pair(
+                        reader.get_address().unwrap().get_upper(),
+                        reader.get_address().unwrap().get_lower(),
+                    )))
+                }
+
+                MessageTypes::HistoryReqV1 => {
+                    let reader =
+                        capnp::serialize::read_message(data, capnp::message::ReaderOptions::new())?;
+                    let reader = reader.get_root::<history_req_v1::Reader>()?;
+                    let address = reader.get_address()?;
+
+                    Ok(Message::HistoryReqV1(
+                        Uuid::from_u64_pair(address.get_upper(), address.get_lower()),
+                        reader.get_start_time(),
+                        reader.get_end_time(),
+                        reader.get_interval_max(),
+                        reader.get_history_type().map_err(|err| {
+                            capnp::Error::failed(format!("invalid history type: {}", err.0))
+                        })?,
+                    ))
+                }
+                MessageTypes::HistoryResV1 => {
+                    let reader =
+                        capnp::serialize::read_message(data, capnp::message::ReaderOptions::new())?;
+                    let reader = reader.get_root::<history_res_v1::Reader>()?;
+
+                    let history = reader.reborrow().get_hist()?;
+                    let time_delta = history.get_time_delta()?.iter().collect();
+                    let values = match history.get_raw_or_agg().which().map_err(|err| {
+                        capnp::Error::failed(format!("invalid history values union: {}", err.0))
+                    })? {
+                        history::raw_or_agg::Which::Value(values) => {
+                            HistoryValues::Raw(values?.iter().collect())
+                        }
+                        history::raw_or_agg::Which::Aggregate(aggregates) => {
+                            HistoryValues::Aggregate(
+                                aggregates?
+                                    .iter()
+                                    .map(|aggregate| Aggregate {
+                                        minimum: aggregate.get_minimum(),
+                                        maximum: aggregate.get_maximum(),
+                                        sum: aggregate.get_sum(),
+                                        count: aggregate.get_count(),
+                                        integral: aggregate.get_integral(),
+                                        active_time: aggregate.get_active_time(),
+                                    })
+                                    .collect(),
+                            )
+                        }
+                    };
+
+                    Ok(Message::HistoryResV1(History { time_delta, values }))
+                }
+                MessageTypes::FluxClassifyJobReqV1 => {
+                    todo!("Implement me!");
+                }
+                MessageTypes::FluxClassifyJobResV1 => {
+                    todo!("Implement me!");
+                }
+
+                MessageTypes::FluxLifecycleHeartbeatV1 => {
+                    todo!("Implement me!");
+                }
+                MessageTypes::RegisterResolveResV1 => Err(MessageError::ParseError(
+                    "RegisterResolveResV1 is deprecated!".to_string(),
+                )),
+                MessageTypes::UnregisterResolveResV1 => Err(MessageError::ParseError(
+                    "UnregisterResolveResV1 is deprecated!".to_string(),
+                )),
             }
-    }
         }
     }
 
@@ -508,31 +485,6 @@ impl Message {
                 Ok((MessageTypes::RegisterResolveReqV1 as u64, buffer))
             }
 
-            Message::RegisterResolveResV1(success, err_msg) => {
-                let mut bld =
-                    capnp::message::TypedBuilder::<register_resolve_res_v1::Owned>::new_default();
-                let mut msg = bld.init_root();
-
-                msg.set_success(*success);
-                msg.set_err_msg(err_msg);
-
-                let mut buffer = vec![];
-                capnp::serialize::write_message(&mut buffer, bld.borrow_inner())?;
-                Ok((MessageTypes::RegisterResolveResV1 as u64, buffer))
-            }
-            Message::UnregisterResolveResV1(success, err_msg) => {
-                let mut bld =
-                    capnp::message::TypedBuilder::<unregister_resolve_res_v1::Owned>::new_default();
-                let mut msg = bld.init_root();
-
-                msg.set_success(*success);
-                msg.set_err_msg(err_msg);
-
-                let mut buffer = vec![];
-                capnp::serialize::write_message(&mut buffer, bld.borrow_inner())?;
-                Ok((MessageTypes::UnregisterResolveResV1 as u64, buffer))
-            }
-
             Message::UnregisterResolveReqV1(addr) => {
                 let mut bld =
                     capnp::message::TypedBuilder::<unregister_resolve_req_v1::Owned>::new_default();
@@ -549,8 +501,7 @@ impl Message {
             }
 
             Message::HistoryReqV1(address, start, end, interval_max, history_type) => {
-                let mut bld =
-                    capnp::message::TypedBuilder::<history_req_v1::Owned>::new_default();
+                let mut bld = capnp::message::TypedBuilder::<history_req_v1::Owned>::new_default();
                 let mut msg = bld.init_root();
                 let mut address_builder = msg.reborrow().init_address();
                 let (upper, lower) = address.as_u64_pair();
@@ -566,45 +517,40 @@ impl Message {
                 Ok((MessageTypes::HistoryReqV1 as u64, buffer))
             }
 
-            Message::HistoryResV1(result) => {
-                let mut bld =
-                    capnp::message::TypedBuilder::<history_res_v1::Owned>::new_default();
+            Message::HistoryResV1(history) => {
+                let mut bld = capnp::message::TypedBuilder::<history_res_v1::Owned>::new_default();
                 let msg = bld.init_root();
 
-                match result {
-                    Err(err) => msg.get_ok_or_err().set_err(err),
-                    Ok(history) => {
-                        let mut history_builder = msg.get_ok_or_err().init_ok();
-                        let mut time_delta_builder =
-                            history_builder.reborrow().init_time_delta(history.time_delta.len() as u32);
-                        for (index, value) in history.time_delta.iter().enumerate() {
-                            time_delta_builder.set(index as u32, *value);
-                        }
+                let mut history_builder = msg.init_hist();
+                let mut time_delta_builder = history_builder
+                    .reborrow()
+                    .init_time_delta(history.time_delta.len() as u32);
+                for (index, value) in history.time_delta.iter().enumerate() {
+                    time_delta_builder.set(index as u32, *value);
+                }
 
-                        match &history.values {
-                            HistoryValues::Raw(values) => {
-                                let mut values_builder = history_builder
-                                    .get_raw_or_agg()
-                                    .init_value(values.len() as u32);
-                                for (index, value) in values.iter().enumerate() {
-                                    values_builder.set(index as u32, *value);
-                                }
-                            }
-                            HistoryValues::Aggregate(aggregates) => {
-                                let mut aggregates_builder = history_builder
-                                    .get_raw_or_agg()
-                                    .init_aggregate(aggregates.len() as u32);
-                                for (index, aggregate) in aggregates.iter().enumerate() {
-                                    let mut aggregate_builder =
-                                        aggregates_builder.reborrow().get(index as u32);
-                                    aggregate_builder.set_minimum(aggregate.minimum);
-                                    aggregate_builder.set_maximum(aggregate.maximum);
-                                    aggregate_builder.set_sum(aggregate.sum);
-                                    aggregate_builder.set_count(aggregate.count);
-                                    aggregate_builder.set_integral(aggregate.integral);
-                                    aggregate_builder.set_active_time(aggregate.active_time);
-                                }
-                            }
+                match &history.values {
+                    HistoryValues::Raw(values) => {
+                        let mut values_builder = history_builder
+                            .get_raw_or_agg()
+                            .init_value(values.len() as u32);
+                        for (index, value) in values.iter().enumerate() {
+                            values_builder.set(index as u32, *value);
+                        }
+                    }
+                    HistoryValues::Aggregate(aggregates) => {
+                        let mut aggregates_builder = history_builder
+                            .get_raw_or_agg()
+                            .init_aggregate(aggregates.len() as u32);
+                        for (index, aggregate) in aggregates.iter().enumerate() {
+                            let mut aggregate_builder =
+                                aggregates_builder.reborrow().get(index as u32);
+                            aggregate_builder.set_minimum(aggregate.minimum);
+                            aggregate_builder.set_maximum(aggregate.maximum);
+                            aggregate_builder.set_sum(aggregate.sum);
+                            aggregate_builder.set_count(aggregate.count);
+                            aggregate_builder.set_integral(aggregate.integral);
+                            aggregate_builder.set_active_time(aggregate.active_time);
                         }
                     }
                 }
@@ -614,8 +560,15 @@ impl Message {
                 Ok((MessageTypes::HistoryResV1 as u64, buffer))
             }
 
-            Message::UserDefined(payload_type, payload) => {
-                Ok((*payload_type, payload.to_vec()))
+            Message::UserDefined(payload_type, payload) => Ok((*payload_type, payload.to_vec())),
+            Message::ErrorResV1(error_code, what) => {
+                let mut bld = capnp::message::TypedBuilder::<error_res_v1::Owned>::new_default();
+                let mut msg = bld.init_root();
+                msg.set_what(what);
+                msg.set_error_code(*error_code);
+                let mut buffer = vec![];
+                capnp::serialize::write_message(&mut buffer, bld.borrow_inner())?;
+                Ok((MessageTypes::ErrorResV1 as u64, buffer))
             }
         }
     }
@@ -656,8 +609,8 @@ mod tests {
             values: HistoryValues::Raw(vec![1.5, 2.5, 3.5]),
         };
 
-        match round_trip(Message::HistoryResV1(Ok(history.clone()))) {
-            Message::HistoryResV1(Ok(actual)) => assert_eq!(actual, history),
+        match round_trip(Message::HistoryResV1(history.clone())) {
+            Message::HistoryResV1(actual) => assert_eq!(actual, history),
             message => panic!("unexpected message: {message:?}"),
         }
     }
@@ -676,17 +629,8 @@ mod tests {
             }]),
         };
 
-        match round_trip(Message::HistoryResV1(Ok(history.clone()))) {
-            Message::HistoryResV1(Ok(actual)) => assert_eq!(actual, history),
-            message => panic!("unexpected message: {message:?}"),
-        }
-    }
-
-    #[test]
-    fn error_history_response_round_trips() {
-        let error = "history unavailable".to_owned();
-        match round_trip(Message::HistoryResV1(Err(error.clone()))) {
-            Message::HistoryResV1(Err(actual)) => assert_eq!(actual, error),
+        match round_trip(Message::HistoryResV1(history.clone())) {
+            Message::HistoryResV1(actual) => assert_eq!(actual, history),
             message => panic!("unexpected message: {message:?}"),
         }
     }

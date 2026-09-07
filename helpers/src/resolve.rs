@@ -2,16 +2,16 @@
 //
 // SPDX-License-Identifier: MIT
 
-
 use seanerbus_client::Connection;
 use uuid::Uuid;
 
-pub async fn resolve(conn: &mut Connection, name: Vec<(String, String)> ) -> Result<Vec<Uuid>, Box< dyn std::error::Error>>{
-
+pub async fn resolve(
+    conn: &mut Connection,
+    name: Vec<(String, String)>,
+) -> Result<Vec<Uuid>, Box<dyn std::error::Error>> {
     let (payload_type, payload) = seanerbus_msg::message::Message::ResolveReqV1(name)
         .to_capnp()
         .unwrap();
-
 
     let msg = conn
         .request(
@@ -25,10 +25,11 @@ pub async fn resolve(conn: &mut Connection, name: Vec<(String, String)> ) -> Res
         panic!("Expected Response to Request, got {:?}", msg.dp_type);
     }
 
-    let payload = seanerbus_msg::message::Message::from_capnp(msg.payload_type, &msg.payload).unwrap();
+    let payload =
+        seanerbus_msg::message::Message::from_capnp(msg.payload_type, &msg.payload).unwrap();
     if let seanerbus_msg::message::Message::ResolveResV1(addr_vec) = payload {
-        return Ok(addr_vec)
+        Ok(addr_vec)
     } else {
-        return Err("Address resolution failed!".into())
+        Err("Address resolution failed!".into())
     }
 }

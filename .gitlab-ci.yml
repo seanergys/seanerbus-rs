@@ -37,6 +37,11 @@ build-rust:
     - cargo test --verbose
     - cargo clippy
     - cargo fmt
+    - cd ../helpers
+    - cargo build --release
+    - cargo test --verbose
+    - cargo clippy
+    - cargo fmt
     - cd ../client
     - cargo build --release
     - cargo test --verbose
