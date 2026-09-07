@@ -2,22 +2,32 @@
 //
 // SPDX-License-Identifier: MIT
 
-
 use uuid::Uuid;
 
-pub async fn get_timeline(conn: &mut seanerbus_client::Connection, metric_uuid: Uuid, start_time: i64, end_time: i64, interval_max: i64, history_type: seanerbus_msg::msg_capnp::HistoryType) -> Result<seanerbus_msg::message::History, Box< dyn std::error::Error>> {
-    let name: Vec<(String, String)> = Vec::from([("service".to_owned(), "time_series_db".to_owned())]);
+pub async fn get_timeline(
+    conn: &mut seanerbus_client::Connection,
+    metric_uuid: Uuid,
+    start_time: i64,
+    end_time: i64,
+    interval_max: i64,
+    history_type: seanerbus_msg::msg_capnp::HistoryType,
+) -> Result<seanerbus_msg::message::History, Box<dyn std::error::Error>> {
+    let name: Vec<(String, String)> =
+        Vec::from([("service".to_owned(), "time_series_db".to_owned())]);
 
     let db_addrs = crate::resolve::resolve(conn, name).await?;
 
-    if db_addrs.len() == 0 {
-        return Err("DB Address not found!".into())
-
+    if db_addrs.is_empty() {
+        return Err("DB Address not found!".into());
     }
 
     let db_addr = db_addrs[0];
     let (payload_type, payload) = seanerbus_msg::message::Message::HistoryReqV1(
-        metric_uuid, start_time, end_time, interval_max, history_type
+        metric_uuid,
+        start_time,
+        end_time,
+        interval_max,
+        history_type,
     )
     .to_capnp()
     .unwrap();
@@ -33,15 +43,12 @@ pub async fn get_timeline(conn: &mut seanerbus_client::Connection, metric_uuid: 
     if msg.dp_type != seanerbus_schemas::message::MessageType::Response {
         panic!("Expected Response to Request, got {:?}", msg.dp_type);
     }
-    
-    
-    let payload = seanerbus_msg::message::Message::from_capnp(msg.payload_type, &msg.payload).unwrap();
-    if let seanerbus_msg::message::Message::HistoryResV1(response) = payload {
-        match response {
-            Ok(history) => Ok(history),
-            Err(string) => Err(string.into()),
-        }
-    } else {
-        return Err("Get timeline reequest failed on response!".into())
+
+    let payload =
+        seanerbus_msg::message::Message::from_capnp(msg.payload_type, &msg.payload).unwrap();
+    match payload {
+        seanerbus_msg::message::Message::HistoryResV1(history) => Ok(history),
+        seanerbus_msg::message::Message::ErrorResV1(_, what) => Err(what.into()),
+        _ => Err("Unknown message type!".into()),
     }
 }
