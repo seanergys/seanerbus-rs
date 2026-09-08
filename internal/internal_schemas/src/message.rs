@@ -178,6 +178,7 @@ impl Message {
     pub fn create_error(
         to: ConnectionId,
         addr: Address,
+        matching_id: u64,
         error_kind: internal_capnp::error_payload::ErrorKind,
         error_str: &str,
     ) -> Message {
@@ -193,7 +194,7 @@ impl Message {
             }
             .to_capnp()
             .unwrap(),
-            matching_id: 0
+            matching_id: matching_id
         }
     }
 
@@ -313,6 +314,7 @@ mod tests {
         let msg_err = Message::create_error(
             ConnectionId(Uuid::new_v4()),
             Address(Uuid::new_v4()),
+            0,
             internal_capnp::error_payload::ErrorKind::NoSuchInterface,
             "not an interface",
         );
