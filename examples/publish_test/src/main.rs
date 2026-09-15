@@ -29,7 +29,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         // Encode TimeValueV1
         let (payload_type, payload) =
-            seanerbus_msg::message::Message::TimeValueV1(time, value).to_capnp()?;
+            seanerbus_msg::message::Message::TimeValueV1(chrono::Utc::now(), value).to_capnp()?;
 
         // Publish it to the Data Plane
         conn.publish(
