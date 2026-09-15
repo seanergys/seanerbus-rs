@@ -7,8 +7,8 @@ use uuid::Uuid;
 pub async fn get_timeline(
     conn: &mut seanerbus_client::Connection,
     metric_uuid: Uuid,
-    start_time: i64,
-    end_time: i64,
+    start_time: chrono::DateTime<chrono::Utc>,
+    end_time: chrono::DateTime<chrono::Utc>,
     interval_max: i64,
     history_type: seanerbus_msg::msg_capnp::HistoryType,
 ) -> Result<seanerbus_msg::message::History, Box<dyn std::error::Error>> {

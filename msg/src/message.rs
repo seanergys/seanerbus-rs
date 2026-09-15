@@ -50,7 +50,7 @@ pub struct History {
 /// FOOBAR
 #[derive(Debug)]
 pub enum Message {
-    TimeValueV1(u64, f64),
+    TimeValueV1(chrono::DateTime<chrono::Utc>, f64),
     ResolveReqV1(Vec<(String, String)>),
     ResolveResV1(Vec<Uuid>),
     HelloWorldReqV1(String),
@@ -62,11 +62,11 @@ pub enum Message {
     FluxLifecycleEventV1(String),
     RegisterResolveReqV1(Vec<(String, String)>, Uuid),
     UnregisterResolveReqV1(Uuid),
-    HistoryReqV1(Uuid, i64, i64, i64, crate::msg_capnp::HistoryType),
+    HistoryReqV1(Uuid, chrono::DateTime<chrono::Utc>, chrono::DateTime<chrono::Utc>, i64, crate::msg_capnp::HistoryType),
     HistoryResV1(History),
     ErrorResV1(u64, String),
     GetReqV1(),
-    GetResV1(u64),
+    GetResV1(u64, chrono::DateTime<chrono::Utc>),
     SetReqV1(u64),
     UserDefined(u64, Vec<u8>),
 }
@@ -98,7 +98,7 @@ impl Message {
 
                     let reader = reader.get_root::<time_value_v1::Reader>()?;
 
-                    Ok(Message::TimeValueV1(reader.get_time(), reader.get_value()))
+                    Ok(Message::TimeValueV1(chrono::DateTime::from_timestamp_nanos(reader.get_time() as i64), reader.get_value()))
                 }
                 MessageTypes::ResolveReqV1 => {
                     let reader =
@@ -250,8 +250,8 @@ impl Message {
 
                     Ok(Message::HistoryReqV1(
                         Uuid::from_u64_pair(address.get_upper(), address.get_lower()),
-                        reader.get_start_time(),
-                        reader.get_end_time(),
+                        chrono::DateTime::from_timestamp_nanos(reader.get_start_time() as i64),
+                        chrono::DateTime::from_timestamp_nanos(reader.get_end_time()),
                         reader.get_interval_max(),
                         reader.get_history_type().map_err(|err| {
                             capnp::Error::failed(format!("invalid history type: {}", err.0))
@@ -313,14 +313,14 @@ impl Message {
                         capnp::serialize::read_message(data, capnp::message::ReaderOptions::new())?;
                     let reader = reader.get_root::<get_res_v1::Reader>()?;
 
-                    Ok(Message::GetResV1(reader.reborrow().get_value()))
+                    Ok( Message::GetResV1(reader.get_value(), chrono::DateTime::from_timestamp_nanos(reader.reborrow().get_time() as i64)))
                 }
                 MessageTypes::SetReqV1 => {
                     let reader =
                         capnp::serialize::read_message(data, capnp::message::ReaderOptions::new())?;
                     let reader = reader.get_root::<set_req_v1::Reader>()?;
 
-                    Ok(Message::GetResV1(reader.reborrow().get_value()))
+                    Ok(Message::SetReqV1(reader.reborrow().get_value()))
                 }
             }
         }
@@ -335,7 +335,7 @@ impl Message {
                 let mut bld = capnp::message::TypedBuilder::<time_value_v1::Owned>::new_default();
                 let mut msg = bld.init_root();
 
-                msg.set_time(*t);
+                msg.set_time(t.timestamp_nanos_opt().unwrap() as u64);
                 msg.set_value(*v);
                 let mut buffer = vec![];
                 capnp::serialize::write_message(&mut buffer, bld.borrow_inner())?;
@@ -529,8 +529,8 @@ impl Message {
                 let (upper, lower) = address.as_u64_pair();
                 address_builder.set_upper(upper);
                 address_builder.set_lower(lower);
-                msg.set_start_time(*start);
-                msg.set_end_time(*end);
+                msg.set_start_time(start.timestamp_nanos_opt().unwrap());
+                msg.set_end_time(end.timestamp_nanos_opt().unwrap());
                 msg.set_interval_max(*interval_max);
                 msg.set_history_type(*history_type);
 
@@ -599,10 +599,11 @@ impl Message {
                 capnp::serialize::write_message(&mut buffer, bld.borrow_inner())?;
                 Ok((MessageTypes::GetReqV1 as u64, buffer))
             }
-            Message::GetResV1(value) => {
+            Message::GetResV1(value, time) => {
                 let mut bld = capnp::message::TypedBuilder::<get_res_v1::Owned>::new_default();
                 let mut msg = bld.init_root();
                 msg.reborrow().set_value(*value);
+                msg.reborrow().set_time(time.timestamp_nanos_opt().unwrap() as u64);
                 let mut buffer = vec![];
                 capnp::serialize::write_message(&mut buffer, bld.borrow_inner())?;
                 Ok((MessageTypes::GetReqV1 as u64, buffer))
@@ -613,7 +614,7 @@ impl Message {
                 msg.reborrow().set_value(*value);
                 let mut buffer = vec![];
                 capnp::serialize::write_message(&mut buffer, bld.borrow_inner())?;
-                Ok((MessageTypes::GetReqV1 as u64, buffer))
+                Ok((MessageTypes::SetReqV1 as u64, buffer))
             }
         }
     }
@@ -621,7 +622,9 @@ impl Message {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use chrono::DateTime;
+
+use super::*;
 
     fn round_trip(message: Message) -> Message {
         let (payload_type, data) = message.to_capnp().unwrap();
@@ -633,14 +636,14 @@ mod tests {
         let address = Uuid::from_u64_pair(0x1234, 0x5678);
         match round_trip(Message::HistoryReqV1(
             address,
-            -100,
-            200,
+            DateTime::from_timestamp_nanos(100),
+            DateTime::from_timestamp_nanos(200),
             30,
             crate::msg_capnp::HistoryType::FlexTimeline,
         )) {
             Message::HistoryReqV1(actual_address, start, end, interval_max, history_type) => {
                 assert_eq!(actual_address, address);
-                assert_eq!((start, end, interval_max), (-100, 200, 30));
+                assert_eq!((start, end, interval_max), (DateTime::from_timestamp_nanos(100), DateTime::from_timestamp_nanos(200), 30));
                 assert_eq!(history_type, crate::msg_capnp::HistoryType::FlexTimeline);
             }
             message => panic!("unexpected message: {message:?}"),
