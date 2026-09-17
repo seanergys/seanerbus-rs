@@ -59,11 +59,11 @@ impl From<MessageType> for internal_capnp::message::MessageType {
     }
 }
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Copy)]
-pub struct Address(pub Uuid);
+pub struct Entity(pub Uuid);
 
-impl std::fmt::Display for Address {
+impl std::fmt::Display for Entity {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "addr({})", self.0)
+        write!(f, "entity({})", self.0)
     }
 }
 
@@ -72,7 +72,7 @@ pub struct Message {
     pub dp_type: MessageType,
     pub to: Option<ConnectionId>,
     pub from: Option<ConnectionId>,
-    pub address: Address,
+    pub entity: Entity,
     pub payload: Vec<u8>,
     pub payload_type: u64,
     pub matching_id: u64
@@ -98,7 +98,7 @@ impl Message {
 
         let payload = msg.get_payload().unwrap();
         let payload_type = msg.get_payload_type();
-        let address = msg.get_address().unwrap();
+        let entity = msg.get_address().unwrap();
         let from = match msg.has_from() {
             true => {
                 let from = msg.get_from().unwrap();
@@ -127,9 +127,9 @@ impl Message {
                 dp_type,
                 payload_type,
                 payload: payload.to_vec(),
-                address: Address(Uuid::from_u64_pair(
-                    address.get_upper(),
-                    address.get_lower(),
+                entity: Entity(Uuid::from_u64_pair(
+                    entity.get_upper(),
+                    entity.get_lower(),
                 )),
                 to,
                 from,
@@ -152,7 +152,7 @@ impl Message {
         msg.set_matching_id(self.matching_id);
         let mut uuid_builder = msg.reborrow().init_address();
 
-        let uuid_pair = self.address.0.as_u64_pair();
+        let uuid_pair = self.entity.0.as_u64_pair();
         uuid_builder.set_upper(uuid_pair.0);
         uuid_builder.set_lower(uuid_pair.1);
         if let Some(id) = self.to {
@@ -177,7 +177,7 @@ impl Message {
 
     pub fn create_error(
         to: ConnectionId,
-        addr: Address,
+        entity: Entity,
         matching_id: u64,
         error_kind: internal_capnp::error_payload::ErrorKind,
         error_str: &str,
@@ -186,7 +186,7 @@ impl Message {
             dp_type: MessageType::Error,
             to: Some(to),
             from: None,
-            address: addr,
+            entity: entity,
             payload_type: 0,
             payload: ErrorPayload {
                 error_kind,
@@ -198,37 +198,37 @@ impl Message {
         }
     }
 
-    pub fn subscribe_to_msg(addr: Address) -> Message {
+    pub fn subscribe_to_msg(entity: Entity) -> Message {
         Message {
             dp_type: MessageType::Subscribe,
             to: None,
             from: None,
-            address: addr,
+            entity: entity,
             payload: vec![],
             payload_type: 0,
             matching_id: 0
         }
     }
 
-    pub fn publish_msg(addr: Address, payload_type: u64, payload: &[u8]) -> Message {
+    pub fn publish_msg(entity: Entity, payload_type: u64, payload: &[u8]) -> Message {
         Message {
             dp_type: MessageType::Publish,
             to: None,
             from: None,
-            address: addr,
+            entity: entity,
             payload: payload.to_vec(),
             payload_type,
             matching_id: 0
         }
     }
 
-    pub fn request_msg(addr: Address, payload_type: u64, payload: &[u8]) -> Message {
+    pub fn request_msg(entity: Entity, payload_type: u64, payload: &[u8]) -> Message {
         let mut rng = rand::rng();
         Message {
             dp_type: MessageType::Request,
             to: None,
             from: None,
-            address: addr,
+            entity: entity,
             payload: payload.to_vec(),
             payload_type,
             matching_id: rng.random()
@@ -240,19 +240,19 @@ impl Message {
             dp_type: MessageType::Response,
             to: responds_to.from,
             from: None,
-            address: responds_to.address,
+            entity: responds_to.entity,
             payload: payload.to_vec(),
             payload_type,
             matching_id: responds_to.matching_id
         }
     }
 
-    pub fn register_msg(addr: Address) -> Message {
+    pub fn register_msg(entity: Entity) -> Message {
         Message {
             dp_type: MessageType::Register,
             to: None,
             from: None,
-            address: addr,
+            entity: entity,
             payload: vec![],
             payload_type: 0,
             matching_id: 0
@@ -271,7 +271,7 @@ mod tests {
             dp_type: MessageType::Error,
             to: Some(ConnectionId(Uuid::new_v4())),
             from: Some(ConnectionId(Uuid::new_v4())),
-            address: Address(Uuid::new_v4()),
+            entity: Entity(Uuid::new_v4()),
             payload: str.as_bytes().to_vec(),
             payload_type: 42,
             matching_id: 69
@@ -291,13 +291,13 @@ mod tests {
     }
 
     #[test]
-    fn test_create_empty_addrs() {
+    fn test_create_empty_entities() {
         let str = "foo";
         let msg1 = Message {
             dp_type: MessageType::Error,
             to: None,
             from: None,
-            address: Address(Uuid::new_v4()),
+            entity: Entity(Uuid::new_v4()),
             payload: str.as_bytes().to_vec(),
             payload_type: 42,
             matching_id: 0
@@ -313,7 +313,7 @@ mod tests {
     fn can_create_error() {
         let msg_err = Message::create_error(
             ConnectionId(Uuid::new_v4()),
-            Address(Uuid::new_v4()),
+            Entity(Uuid::new_v4()),
             0,
             internal_capnp::error_payload::ErrorKind::NoSuchInterface,
             "not an interface",

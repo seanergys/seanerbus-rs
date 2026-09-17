@@ -5,13 +5,13 @@
 //! # tokio async based SeanerBUS client library
 //! ## Example
 //!
-//! This subscribes to a topic with Address `0x0000 0000 0000 000f0`
+//! This subscribes to a topic with Entity `0x0000 0000 0000 000f0`
 //!
 //!
 //! ```ignore
 //! let mut conn = Connection::new("localhost:5398").await?;
 //!
-//!    conn.subscribe(seanerbus_schemas::message::Address(Uuid::from_u64_pair(
+//!    conn.subscribe(seanerbus_schemas::message::Entity(Uuid::from_u64_pair(
 //!        0, 64,
 //!    )))
 //!    .await?;
@@ -30,7 +30,7 @@
 use seanerbus_async::reader::MessageReader;
 use seanerbus_async::writer::MessageWriter;
 use seanerbus_schemas::error_payload::{ErrorPayload, ErrorPayloadError};
-use seanerbus_schemas::message::{Address, Message, MessageType};
+use seanerbus_schemas::message::{Entity, Message, MessageType};
 use thiserror::Error;
 use tokio::net::TcpStream;
 
@@ -77,14 +77,14 @@ impl Connection {
         })
     }
 
-    /// Subscribes to topic given by `addr`, which is a UUIDv4.
+    /// Subscribes to topic given by `entity`, which is a UUIDv4.
     ///
     /// Returns a [`ConnectionError`](enum.ConnectionError.html) if sending the subscribe message
     /// failed.
-    pub async fn subscribe(&mut self, addr: Address) -> Result<(), ConnectionError> {
+    pub async fn subscribe(&mut self, entity: Entity) -> Result<(), ConnectionError> {
         Ok(self
             .writer
-            .write_message(&Message::subscribe_to_msg(addr))
+            .write_message(&Message::subscribe_to_msg(entity))
             .await?)
     }
 
@@ -99,33 +99,33 @@ impl Connection {
         Ok(self.reader.read_message().await?)
     }
 
-    /// Publishes a `Message` to the UUIDv4 `addr` with the given payload and payload type.
+    /// Publishes a `Message` to the UUIDv4 `entity` with the given payload and payload type.
     ///
     /// Returns [`ConnectionError`](enum.ConnectionError.html) if publishing the message failed.
     pub async fn publish(
         &mut self,
-        addr: Address,
+        entity: Entity,
         payload_type: u64,
         payload: &[u8],
     ) -> Result<(), ConnectionError> {
         Ok(self
             .writer
-            .write_message(&Message::publish_msg(addr, payload_type, payload))
+            .write_message(&Message::publish_msg(entity, payload_type, payload))
             .await?)
     }
 
-    /// Posts a request to the given Address with the given payload_type and payload.
+    /// Posts a request to the given Entity with the given payload_type and payload.
     ///
     /// Returns either a [`ConnectionError`](enum.ConnectionError.html) if the request failed or the
     /// `Message` gotten as a result.
     pub async fn request(
         &mut self,
-        addr: Address,
+        entity: Entity,
         payload_type: u64,
         payload: &[u8],
     ) -> Result<Message, ConnectionError> {
         self.writer
-            .write_message(&Message::request_msg(addr, payload_type, payload))
+            .write_message(&Message::request_msg(entity, payload_type, payload))
             .await?;
 
         let msg = match self.reader.read_message().await? {
@@ -168,10 +168,10 @@ impl Connection {
     ///
     /// After the register Message, incoming requests can be read with
     /// [`read_msg`](struct.Connection.html#method.read_msg)
-    pub async fn register(&mut self, addr: Address) -> Result<(), ConnectionError> {
+    pub async fn register(&mut self, entity: Entity) -> Result<(), ConnectionError> {
         Ok(self
             .writer
-            .write_message(&Message::register_msg(addr))
+            .write_message(&Message::register_msg(entity))
             .await?)
     }
 }

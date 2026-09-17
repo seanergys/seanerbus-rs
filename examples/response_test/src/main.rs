@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: MIT
 
 use seanerbus_client::Connection;
-use seanerbus_schemas::message::{Address, MessageType};
+use seanerbus_schemas::message::{Entity, MessageType};
 use uuid::Uuid;
 
 //Listens on the topic given on the command line for incoming requests.
@@ -20,7 +20,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut conn = Connection::new("localhost:5398").await?;
 
-    conn.register(Address(Uuid::parse_str(&args[1]).unwrap()))
+    conn.register(Entity(Uuid::parse_str(&args[1]).unwrap()))
         .await?;
 
     while let Some(msg) = conn.read_msg().await? {

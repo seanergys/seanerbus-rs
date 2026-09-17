@@ -15,7 +15,7 @@ pub async fn resolve(
 
     let msg = conn
         .request(
-            seanerbus_schemas::message::Address(Uuid::from_u128(0x10CA105)),
+            seanerbus_schemas::message::Entity(Uuid::from_u128(0x10CA105)),
             payload_type,
             &payload,
         )
@@ -27,9 +27,9 @@ pub async fn resolve(
 
     let payload =
         seanerbus_msg::message::Message::from_capnp(msg.payload_type, &msg.payload).unwrap();
-    if let seanerbus_msg::message::Message::ResolveResV1(addr_vec) = payload {
-        Ok(addr_vec)
+    if let seanerbus_msg::message::Message::ResolveResV1(entitiy_vec) = payload {
+        Ok(entitiy_vec)
     } else {
-        Err("Address resolution failed!".into())
+        Err("Entity resolution failed!".into())
     }
 }

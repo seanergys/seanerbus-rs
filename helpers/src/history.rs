@@ -15,13 +15,13 @@ pub async fn get_timeline(
     let name: Vec<(String, String)> =
         Vec::from([("service".to_owned(), "time_series_db".to_owned())]);
 
-    let db_addrs = crate::resolve::resolve(conn, name).await?;
+    let db_entities = crate::resolve::resolve(conn, name).await?;
 
-    if db_addrs.is_empty() {
-        return Err("DB Address not found!".into());
+    if db_entities.is_empty() {
+        return Err("DB Entity not found!".into());
     }
 
-    let db_addr = db_addrs[0];
+    let db_entity = db_entities[0];
     let (payload_type, payload) = seanerbus_msg::message::Message::HistoryReqV1(
         metric_uuid,
         start_time,
@@ -34,7 +34,7 @@ pub async fn get_timeline(
 
     let msg = conn
         .request(
-            seanerbus_schemas::message::Address(db_addr),
+            seanerbus_schemas::message::Entity(db_entity),
             payload_type,
             &payload,
         )

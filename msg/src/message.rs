@@ -62,7 +62,13 @@ pub enum Message {
     FluxLifecycleEventV1(String),
     RegisterResolveReqV1(Vec<(String, String)>, Uuid),
     UnregisterResolveReqV1(Uuid),
-    HistoryReqV1(Uuid, chrono::DateTime<chrono::Utc>, chrono::DateTime<chrono::Utc>, i64, crate::msg_capnp::HistoryType),
+    HistoryReqV1(
+        Uuid,
+        chrono::DateTime<chrono::Utc>,
+        chrono::DateTime<chrono::Utc>,
+        i64,
+        crate::msg_capnp::HistoryType,
+    ),
     HistoryResV1(History),
     ErrorResV1(u64, String),
     GetReqV1(),
@@ -98,7 +104,10 @@ impl Message {
 
                     let reader = reader.get_root::<time_value_v1::Reader>()?;
 
-                    Ok(Message::TimeValueV1(chrono::DateTime::from_timestamp_nanos(reader.get_time() as i64), reader.get_value()))
+                    Ok(Message::TimeValueV1(
+                        chrono::DateTime::from_timestamp_nanos(reader.get_time() as i64),
+                        reader.get_value(),
+                    ))
                 }
                 MessageTypes::ResolveReqV1 => {
                     let reader =
@@ -106,7 +115,7 @@ impl Message {
                     let reader = reader.get_root::<resolve_req_v1::Reader>()?;
 
                     let mut attrs: Vec<(String, String)> = vec![];
-                    for kv in reader.get_attributes()? {
+                    for kv in reader.get_name()? {
                         attrs.push((
                             kv.get_key()?.to_string().unwrap(),
                             kv.get_value()?.to_string().unwrap(),
@@ -121,8 +130,8 @@ impl Message {
                     let reader = reader.get_root::<resolve_res_v1::Reader>()?;
 
                     let mut attrs: Vec<Uuid> = vec![];
-                    for addr in reader.get_matching_interfaces()? {
-                        attrs.push(Uuid::from_u64_pair(addr.get_upper(), addr.get_lower()));
+                    for entity in reader.get_entities()? {
+                        attrs.push(Uuid::from_u64_pair(entity.get_upper(), entity.get_lower()));
                     }
 
                     Ok(Message::ResolveResV1(attrs))
@@ -172,8 +181,8 @@ impl Message {
                     let reader = reader.get_root::<reverse_resolve_req_v1::Reader>()?;
 
                     Ok(Message::ReverseResolveReqV1(Uuid::from_u64_pair(
-                        reader.get_address().unwrap().get_upper(),
-                        reader.get_address().unwrap().get_lower(),
+                        reader.get_entity().unwrap().get_upper(),
+                        reader.get_entity().unwrap().get_lower(),
                     )))
                 }
                 MessageTypes::ReverseResolveResV1 => {
@@ -204,9 +213,9 @@ impl Message {
                     let reader =
                         capnp::serialize::read_message(data, capnp::message::ReaderOptions::new())?;
                     let reader = reader.get_root::<register_resolve_req_v1::Reader>()?;
-                    let address = Uuid::from_u64_pair(
-                        reader.get_address().unwrap().get_upper(),
-                        reader.get_address().unwrap().get_lower(),
+                    let entity = Uuid::from_u64_pair(
+                        reader.get_entity().unwrap().get_upper(),
+                        reader.get_entity().unwrap().get_lower(),
                     );
 
                     let mut name: Vec<(String, String)> = vec![];
@@ -217,7 +226,7 @@ impl Message {
                         ));
                     }
 
-                    Ok(Message::RegisterResolveReqV1(name, address))
+                    Ok(Message::RegisterResolveReqV1(name, entity))
                 }
                 MessageTypes::ErrorResV1 => {
                     let reader =
@@ -237,8 +246,8 @@ impl Message {
                     let reader = reader.get_root::<unregister_resolve_req_v1::Reader>()?;
 
                     Ok(Message::UnregisterResolveReqV1(Uuid::from_u64_pair(
-                        reader.get_address().unwrap().get_upper(),
-                        reader.get_address().unwrap().get_lower(),
+                        reader.get_entity().unwrap().get_upper(),
+                        reader.get_entity().unwrap().get_lower(),
                     )))
                 }
 
@@ -246,10 +255,10 @@ impl Message {
                     let reader =
                         capnp::serialize::read_message(data, capnp::message::ReaderOptions::new())?;
                     let reader = reader.get_root::<history_req_v1::Reader>()?;
-                    let address = reader.get_address()?;
+                    let entity = reader.get_entity()?;
 
                     Ok(Message::HistoryReqV1(
-                        Uuid::from_u64_pair(address.get_upper(), address.get_lower()),
+                        Uuid::from_u64_pair(entity.get_upper(), entity.get_lower()),
                         chrono::DateTime::from_timestamp_nanos(reader.get_start_time() as i64),
                         chrono::DateTime::from_timestamp_nanos(reader.get_end_time()),
                         reader.get_interval_max(),
@@ -313,7 +322,10 @@ impl Message {
                         capnp::serialize::read_message(data, capnp::message::ReaderOptions::new())?;
                     let reader = reader.get_root::<get_res_v1::Reader>()?;
 
-                    Ok( Message::GetResV1(reader.get_value(), chrono::DateTime::from_timestamp_nanos(reader.reborrow().get_time() as i64)))
+                    Ok(Message::GetResV1(
+                        reader.get_value(),
+                        chrono::DateTime::from_timestamp_nanos(reader.reborrow().get_time() as i64),
+                    ))
                 }
                 MessageTypes::SetReqV1 => {
                     let reader =
@@ -346,7 +358,7 @@ impl Message {
                 let mut bld = capnp::message::TypedBuilder::<resolve_req_v1::Owned>::new_default();
                 let msg = bld.init_root();
 
-                let mut attr_builder = msg.init_attributes(attrs.len().try_into().unwrap());
+                let mut attr_builder = msg.init_name(attrs.len().try_into().unwrap());
 
                 for (i, attr) in attrs.iter().enumerate() {
                     attr_builder
@@ -368,8 +380,7 @@ impl Message {
                 let mut bld = capnp::message::TypedBuilder::<resolve_res_v1::Owned>::new_default();
                 let msg = bld.init_root();
 
-                let mut attr_builder =
-                    msg.init_matching_interfaces(uuids.len().try_into().unwrap());
+                let mut attr_builder = msg.init_entities(uuids.len().try_into().unwrap());
 
                 for (i, uuid) in uuids.iter().enumerate() {
                     let (upper, lower) = uuid.as_u64_pair();
@@ -433,14 +444,14 @@ impl Message {
 
                 Ok((MessageTypes::VectorResV1 as u64, buffer))
             }
-            Message::ReverseResolveReqV1(address) => {
+            Message::ReverseResolveReqV1(entity) => {
                 let mut bld =
                     capnp::message::TypedBuilder::<reverse_resolve_req_v1::Owned>::new_default();
                 let mut msg = bld.init_root();
 
-                let mut uuid_builder = msg.reborrow().init_address();
+                let mut uuid_builder = msg.reborrow().init_entity();
 
-                let uuid_pair = address.as_u64_pair();
+                let uuid_pair = entity.as_u64_pair();
                 uuid_builder.set_upper(uuid_pair.0);
                 uuid_builder.set_lower(uuid_pair.1);
                 let mut buffer = vec![];
@@ -452,7 +463,7 @@ impl Message {
                 let mut bld = capnp::message::TypedBuilder::<resolve_req_v1::Owned>::new_default();
                 let msg = bld.init_root();
 
-                let mut attr_builder = msg.init_attributes(name.len().try_into().unwrap());
+                let mut attr_builder = msg.init_name(name.len().try_into().unwrap());
 
                 for (i, attr) in name.iter().enumerate() {
                     attr_builder
@@ -481,13 +492,13 @@ impl Message {
                 Ok((MessageTypes::FluxLifecycleEventV1 as u64, buffer))
             }
 
-            Message::RegisterResolveReqV1(name, addr) => {
+            Message::RegisterResolveReqV1(name, entity) => {
                 let mut bld =
                     capnp::message::TypedBuilder::<register_resolve_req_v1::Owned>::new_default();
                 let mut msg = bld.init_root();
-                let mut uuid_builder = msg.reborrow().init_address();
+                let mut uuid_builder = msg.reborrow().init_entity();
 
-                let uuid_pair = addr.as_u64_pair();
+                let uuid_pair = entity.as_u64_pair();
                 uuid_builder.set_upper(uuid_pair.0);
                 uuid_builder.set_lower(uuid_pair.1);
 
@@ -507,13 +518,13 @@ impl Message {
                 Ok((MessageTypes::RegisterResolveReqV1 as u64, buffer))
             }
 
-            Message::UnregisterResolveReqV1(addr) => {
+            Message::UnregisterResolveReqV1(entity) => {
                 let mut bld =
                     capnp::message::TypedBuilder::<unregister_resolve_req_v1::Owned>::new_default();
                 let mut msg = bld.init_root();
-                let mut uuid_builder = msg.reborrow().init_address();
+                let mut uuid_builder = msg.reborrow().init_entity();
 
-                let uuid_pair = addr.as_u64_pair();
+                let uuid_pair = entity.as_u64_pair();
                 uuid_builder.set_upper(uuid_pair.0);
                 uuid_builder.set_lower(uuid_pair.1);
 
@@ -522,13 +533,13 @@ impl Message {
                 Ok((MessageTypes::UnregisterResolveReqV1 as u64, buffer))
             }
 
-            Message::HistoryReqV1(address, start, end, interval_max, history_type) => {
+            Message::HistoryReqV1(entity, start, end, interval_max, history_type) => {
                 let mut bld = capnp::message::TypedBuilder::<history_req_v1::Owned>::new_default();
                 let mut msg = bld.init_root();
-                let mut address_builder = msg.reborrow().init_address();
-                let (upper, lower) = address.as_u64_pair();
-                address_builder.set_upper(upper);
-                address_builder.set_lower(lower);
+                let mut entity_builder = msg.reborrow().init_entity();
+                let (upper, lower) = entity.as_u64_pair();
+                entity_builder.set_upper(upper);
+                entity_builder.set_lower(lower);
                 msg.set_start_time(start.timestamp_nanos_opt().unwrap());
                 msg.set_end_time(end.timestamp_nanos_opt().unwrap());
                 msg.set_interval_max(*interval_max);
@@ -603,7 +614,8 @@ impl Message {
                 let mut bld = capnp::message::TypedBuilder::<get_res_v1::Owned>::new_default();
                 let mut msg = bld.init_root();
                 msg.reborrow().set_value(*value);
-                msg.reborrow().set_time(time.timestamp_nanos_opt().unwrap() as u64);
+                msg.reborrow()
+                    .set_time(time.timestamp_nanos_opt().unwrap() as u64);
                 let mut buffer = vec![];
                 capnp::serialize::write_message(&mut buffer, bld.borrow_inner())?;
                 Ok((MessageTypes::GetReqV1 as u64, buffer))
@@ -624,7 +636,7 @@ impl Message {
 mod tests {
     use chrono::DateTime;
 
-use super::*;
+    use super::*;
 
     fn round_trip(message: Message) -> Message {
         let (payload_type, data) = message.to_capnp().unwrap();
@@ -633,17 +645,24 @@ use super::*;
 
     #[test]
     fn history_request_round_trips() {
-        let address = Uuid::from_u64_pair(0x1234, 0x5678);
+        let entity = Uuid::from_u64_pair(0x1234, 0x5678);
         match round_trip(Message::HistoryReqV1(
-            address,
+            entity,
             DateTime::from_timestamp_nanos(100),
             DateTime::from_timestamp_nanos(200),
             30,
             crate::msg_capnp::HistoryType::FlexTimeline,
         )) {
-            Message::HistoryReqV1(actual_address, start, end, interval_max, history_type) => {
-                assert_eq!(actual_address, address);
-                assert_eq!((start, end, interval_max), (DateTime::from_timestamp_nanos(100), DateTime::from_timestamp_nanos(200), 30));
+            Message::HistoryReqV1(actual_entity, start, end, interval_max, history_type) => {
+                assert_eq!(actual_entity, entity);
+                assert_eq!(
+                    (start, end, interval_max),
+                    (
+                        DateTime::from_timestamp_nanos(100),
+                        DateTime::from_timestamp_nanos(200),
+                        30
+                    )
+                );
                 assert_eq!(history_type, crate::msg_capnp::HistoryType::FlexTimeline);
             }
             message => panic!("unexpected message: {message:?}"),
