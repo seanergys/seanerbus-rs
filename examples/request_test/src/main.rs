@@ -4,7 +4,7 @@
 
 use seanerbus_client::Connection;
 use seanerbus_msg::message::Message;
-use seanerbus_schemas::message::{Address, MessageType};
+use seanerbus_schemas::message::{Entity, MessageType};
 use uuid::Uuid;
 
 use thiserror::Error;
@@ -31,7 +31,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let msg = conn
         .request(
-            Address(Uuid::parse_str(&args[1]).unwrap()),
+            Entity(Uuid::parse_str(&args[1]).unwrap()),
             payload_type,
             &payload,
         )

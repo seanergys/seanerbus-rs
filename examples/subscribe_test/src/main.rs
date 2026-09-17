@@ -18,7 +18,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut conn = Connection::new("localhost:5398").await?;
 
-    conn.subscribe(seanerbus_schemas::message::Address(
+    conn.subscribe(seanerbus_schemas::message::Entity(
         Uuid::parse_str(&args[1]).unwrap(),
     ))
     .await?;

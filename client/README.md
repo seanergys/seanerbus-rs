@@ -5,21 +5,21 @@ This sub-directory contains Rust and C++ implementations of the Data Plane commu
 In pseudo-code, all the implementations expose the following functions:
 
 ```c
-// Subscribe to pub/sub exposed by "addr".
-void subscribe(Address addr);
+// Subscribe to pub/sub exposed by "entity".
+void subscribe(Entity entity);
 
-// Publish a payload "payload" of "payload_type" to "addr"
-void publish(Address addr, u64 payload_type, blob payload);
+// Publish a payload "payload" of "payload_type" to "entity"
+void publish(Entity entity, u64 payload_type, blob payload);
 
 // Wait for incoming Messages (incoming requests or subscribed pub/sub messages)
 Message read_msg();
 
-// Register a req/res interface at "addr"
-void register_reqres(Address addr);
+// Register a req/res interface at "entity"
+void register_reqres(Entity entity);
 
-// Perform a request to "addr" with a "payload" of "payload_type", returning the
+// Perform a request to "entity" with a "payload" of "payload_type", returning the
 // answer of the requester.
-Message request(Address addr, u64 payload_type, blob payload);
+Message request(Entity entity, u64 payload_type, blob payload);
 
 // Respond to an "inc_request" with a "payload" of "payload_type"
 void respond_to(Message inc_request, u64 payload_type, blob payload);
@@ -35,7 +35,7 @@ To publish a time-series value, you would use (again, pseudo-code):
 // Encode a single, time-value pair.
 (payload_type, payload) = TimeValueV1(42, 1.0).to_capnp();
 
-publish(some_addr, payload_type, payload);
+publish(some_entity, payload_type, payload);
 ```
 
 `seanerbus/rust_examples` contains full examples for publishing, subscribing, requesting and responding with the Rust client library.

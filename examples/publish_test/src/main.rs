@@ -6,7 +6,7 @@ use seanerbus_client::Connection;
 use uuid::Uuid;
 
 // Publishes TimeValueV1 messages with increasing times and values
-// to the address given on the command line
+// to the entity given on the command line
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = std::env::args().collect();
@@ -33,7 +33,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         // Publish it to the Data Plane
         conn.publish(
-            seanerbus_schemas::message::Address(Uuid::parse_str(&args[1]).unwrap()),
+            seanerbus_schemas::message::Entity(Uuid::parse_str(&args[1]).unwrap()),
             payload_type,
             &payload,
         )
