@@ -52,7 +52,7 @@ pub struct History {
 pub enum Message {
     TimeValueV1(chrono::DateTime<chrono::Utc>, f64),
     ResolveReqV1(Vec<(String, String)>),
-    ResolveResV1(Vec<Uuid>),
+    ResolveResV1(Vec<Uuid>, Vec<Vec<(String, String)>>),
     HelloWorldReqV1(String),
     HelloWorldResV1(String),
     VectorReqV1(Vec<f64>),
@@ -134,7 +134,18 @@ impl Message {
                         attrs.push(Uuid::from_u64_pair(entity.get_upper(), entity.get_lower()));
                     }
 
-                    Ok(Message::ResolveResV1(attrs))
+                    let mut resolved_terms: Vec<Vec<(String, String)>> = Vec::new();
+                    for resolved_terms_for_entity in reader.get_resolved_terms()? {
+                        let res_resolved_terms_for_entity = resolved_terms.push_mut(Vec::new());
+                        for term in resolved_terms_for_entity? {
+                            res_resolved_terms_for_entity.push((
+                                term.get_key()?.to_string().unwrap(),
+                                term.get_value()?.to_string().unwrap(),
+                            ));
+                        }
+                    }
+
+                    Ok(Message::ResolveResV1(attrs, resolved_terms))
                 }
 
                 MessageTypes::HelloWorldReqV1 => {
@@ -376,16 +387,39 @@ impl Message {
 
                 Ok((MessageTypes::ResolveReqV1 as u64, buffer))
             }
-            Message::ResolveResV1(uuids) => {
+            Message::ResolveResV1(uuids, resolved_terms) => {
                 let mut bld = capnp::message::TypedBuilder::<resolve_res_v1::Owned>::new_default();
-                let msg = bld.init_root();
+                let mut msg = bld.init_root();
 
-                let mut attr_builder = msg.init_entities(uuids.len().try_into().unwrap());
+                let mut attr_builder = msg
+                    .reborrow()
+                    .init_entities(uuids.len().try_into().unwrap());
 
                 for (i, uuid) in uuids.iter().enumerate() {
                     let (upper, lower) = uuid.as_u64_pair();
                     attr_builder.reborrow().get(i as u32).set_upper(upper);
                     attr_builder.reborrow().get(i as u32).set_lower(lower);
+                }
+
+                let mut resolved_terms_builder = msg
+                    .reborrow()
+                    .init_resolved_terms(resolved_terms.len() as u32);
+
+                for (i, resolved_terms_for_entity) in resolved_terms.iter().enumerate() {
+                    let mut terms_builder = resolved_terms_builder
+                        .reborrow()
+                        .init(i as u32, resolved_terms_for_entity.len() as u32);
+
+                    for (n, term) in resolved_terms_for_entity.iter().enumerate() {
+                        terms_builder
+                            .reborrow()
+                            .get(n as u32)
+                            .set_key(term.0.clone());
+                        terms_builder
+                            .reborrow()
+                            .get(n as u32)
+                            .set_value(term.1.clone());
+                    }
                 }
                 let mut buffer = vec![];
                 capnp::serialize::write_message(&mut buffer, bld.borrow_inner())?;

@@ -27,7 +27,7 @@ pub async fn resolve(
 
     let payload =
         seanerbus_msg::message::Message::from_capnp(msg.payload_type, &msg.payload).unwrap();
-    if let seanerbus_msg::message::Message::ResolveResV1(entitiy_vec) = payload {
+    if let seanerbus_msg::message::Message::ResolveResV1(entitiy_vec, _) = payload {
         Ok(entitiy_vec)
     } else {
         Err("Entity resolution failed!".into())
